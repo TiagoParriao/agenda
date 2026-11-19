@@ -7,12 +7,12 @@
 //   a segurança vem das regras do Firestore e do login).
 
 export const firebaseConfigProducao = {
-  apiKey: "COLE_AQUI",
-  authDomain: "COLE_AQUI",
-  projectId: "COLE_AQUI",
-  storageBucket: "COLE_AQUI",
-  messagingSenderId: "COLE_AQUI",
-  appId: "COLE_AQUI",
+  apiKey: "AIzaSyB0mKF8tBkCOLhUAd8nNF5EJD-kUQhFZa8",
+  authDomain: "agenda-consultorio-6a5cb.firebaseapp.com",
+  projectId: "agenda-consultorio-6a5cb",
+  storageBucket: "agenda-consultorio-6a5cb.firebasestorage.app",
+  messagingSenderId: "650307684600",
+  appId: "1:650307684600:web:61c1dd1755882b968b530d",
 };
 
 export const firebaseConfigEmulador = {
