@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.firebase/
+.claude/
+
+# Fora do repositório público: plano interno e planilha antiga (pode ter dados de pacientes)
+PLANO_AGENDA_ONLINE.md
+*.xlsx
+*.xls
+*.csv
+~$*
+.firebaserc

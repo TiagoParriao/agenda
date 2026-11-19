@@ -1,0 +1,11 @@
+{
+  "name": "agenda",
+  "private": true,
+  "description": "Agenda de pacientes (GitHub Pages + Firebase). Este package.json serve só para o ambiente de testes local; o site em si não tem build.",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "seed": "node scripts/seed-emulador.mjs"
+  },
+  "devDependencies": {}
+}

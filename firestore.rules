@@ -1,0 +1,118 @@
+rules_version = '2';
+// Regras do Firestore da Agenda (ver PLANO_AGENDA_ONLINE.md, seção 9).
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // ---------- quem é a pessoa ----------
+    function logado() { return request.auth != null; }
+    function caminhoPerfil() { return /databases/$(db)/documents/usuarios/$(request.auth.uid); }
+    function perfil() { return get(caminhoPerfil()).data; }
+    function ativa() { return logado() && exists(caminhoPerfil()) && perfil().ativo == true; }
+    function admin() { return ativa() && perfil().papel == 'admin'; }
+    function souEu(campo) { return campo == request.auth.uid; }
+
+    // ---------- validações ----------
+    function dataOk(d) { return d is string && d.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function horaOk(h) { return h is string && h.matches('^[0-2][0-9]:[0-5][0-9]$'); }
+    function textoOk(v, max) { return v is string && v.size() <= max; }
+
+    // A data (AAAA-MM-DD, horário de Brasília) ainda não acabou?
+    // 00:00 UTC do dia + 27h = 24:00 em Brasília (UTC-3).
+    function hojeOuFuturo(d) {
+      return timestamp.date(int(d[0:4]), int(d[5:7]), int(d[8:10])) + duration.value(27, 'h') > request.time;
+    }
+
+    function agendamentoValido(d) {
+      return d.keys().hasAll(['profissionalId', 'data', 'hora', 'encaixe', 'paciente', 'situacao'])
+        && d.profissionalId is string && d.profissionalId.size() > 0
+        && dataOk(d.data) && horaOk(d.hora) && d.encaixe is bool
+        && d.paciente is string && d.paciente.size() > 0 && d.paciente.size() <= 120
+        && textoOk(d.get('telefone', ''), 20)
+        && textoOk(d.get('obs', ''), 500)
+        && d.situacao in ['Agendado', 'Confirmado', 'Atendido', 'Faltou', 'Cancelado'];
+    }
+
+    // Horário normal tem ID fixo profissional_data_hora: é isso que impede marcar dois no mesmo horário.
+    function idDoHorario(id, d) {
+      return d.encaixe == true || id == d.profissionalId + '_' + d.data + '_' + d.hora.replace(':', '-');
+    }
+
+    // ---------- coleções ----------
+
+    match /config/{doc} {
+      allow read: if ativa();
+      allow write: if admin();
+    }
+
+    match /usuarios/{uid} {
+      // A própria pessoa sempre lê o seu documento: é assim que o site sabe
+      // se a conta foi liberada (ou desativada) e mostra a mensagem certa.
+      allow read: if ativa() || (logado() && request.auth.uid == uid);
+      allow write: if admin();
+    }
+
+    match /profissionais/{id} {
+      allow read: if ativa();
+      allow write: if admin();
+    }
+
+    match /agendamentos/{id} {
+      allow read: if ativa();
+
+      allow create: if ativa()
+        && agendamentoValido(request.resource.data)
+        && idDoHorario(id, request.resource.data)
+        && souEu(request.resource.data.criadoPor)
+        && (admin() || hojeOuFuturo(request.resource.data.data));
+
+      allow update: if ativa()
+        && agendamentoValido(request.resource.data)
+        && souEu(request.resource.data.atualizadoPor)
+        // onde e quando é a consulta nunca muda (para mudar, cancela e marca outra)
+        && request.resource.data.diff(resource.data).unchangedKeys().hasAll(['profissionalId', 'data', 'hora', 'encaixe'])
+        && (
+          admin()
+          // dia de hoje em diante: pode editar tudo (sem mexer em "criado por")...
+          || (hojeOuFuturo(resource.data.data)
+              && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['criadoPor', 'criadoPorNome', 'criadoEm']))
+          // ...ou marcar outro paciente por cima de um Cancelado
+          || (hojeOuFuturo(resource.data.data) && resource.data.situacao == 'Cancelado')
+          // dia que já passou: só situação e observação
+          || request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['situacao', 'obs', 'atualizadoPor', 'atualizadoPorNome', 'atualizadoEm'])
+        );
+
+      allow delete: if admin();
+    }
+
+    // Cópia dos cancelados que foram substituídos por outro paciente.
+    match /cancelados/{id} {
+      allow read: if ativa();
+      allow create: if ativa() && souEu(request.resource.data.substituidoPor);
+      allow update, delete: if false;
+    }
+
+    match /bloqueios/{id} {
+      allow read, delete: if ativa();
+      allow create: if ativa()
+        && request.resource.data.profissionalId is string
+        && dataOk(request.resource.data.data)
+        && horaOk(request.resource.data.horaInicio)
+        && horaOk(request.resource.data.horaFim)
+        && request.resource.data.horaInicio < request.resource.data.horaFim
+        && textoOk(request.resource.data.motivo, 100)
+        && souEu(request.resource.data.criadoPor);
+    }
+
+    // ID = data_alvo, onde alvo é "clinica" (todas as agendas) ou o ID do profissional.
+    match /fechamentos/{id} {
+      allow read, delete: if ativa();
+      allow create: if ativa()
+        && dataOk(request.resource.data.data)
+        && request.resource.data.alvo is string
+        && id == request.resource.data.data + '_' + request.resource.data.alvo
+        && textoOk(request.resource.data.motivo, 100)
+        && souEu(request.resource.data.criadoPor);
+    }
+  }
+}
